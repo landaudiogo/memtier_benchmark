@@ -48,8 +48,15 @@
 #include <algorithm>
 #include <arpa/inet.h>
 
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 #include "client.h"
 #include "cluster_client.h"
+
+int rtfd = -1;
 
 
 bool client::setup_client(benchmark_config *config, abstract_protocol *protocol, object_generator *objgen)
@@ -441,6 +448,25 @@ void client::handle_response(unsigned int conn_id, struct timeval timestamp,
                             m_connections[conn_id]->get_readable_id(),
                             response->get_status());
     }
+    
+
+    struct timeval start = request->m_sent_time;
+    struct timeval end = timestamp;
+    unsigned long long start_us = start.tv_sec * 1000000 + start.tv_usec;
+    unsigned long long end_us = end.tv_sec * 1000000 + end.tv_usec;
+
+    if (rtfd == -1) {
+        srand(time(NULL));   // Initialization, should only be called once.
+        int r = rand();
+        char file_name[64];
+        snprintf(file_name, 64, "/tmp/memtier_rt_%d.csv", r);
+        rtfd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+    }
+    char buf[64];
+    int buf_len = 0;
+    buf_len = snprintf(buf, 64, "%llu,%llu,%lld\n", start_us, end_us, ts_diff(request->m_sent_time, timestamp));
+    write(rtfd, buf, buf_len);
+    
     switch (request->m_type) {
         case rt_get:
             m_stats.update_get_op(&timestamp,
